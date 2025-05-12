@@ -21,7 +21,7 @@ def resample_trajectory(x, length=200):
         resampled_trajectory[i] = np.interp(time_steps, np.arange(len_x), x[i])
     return resampled_trajectory.T
 
-def viz_trajs(x, lengths, spatio_mean, spatio_std, lon_range, lat_range):
+def viz_trajs(x, lengths, lon_range, lat_range, spatio_mean = None, spatio_std = None):
     """Give a trajs array and length array, visulaize the trajs
        x: (B, N, 2)
        lenght: (B,)
@@ -32,9 +32,11 @@ def viz_trajs(x, lengths, spatio_mean, spatio_std, lon_range, lat_range):
     Gen_traj = []
     for j in range(x.shape[0]):
         new_traj = resample_trajectory(x[j], lengths[j])
-        new_traj = new_traj * spatio_std + spatio_mean
+        if spatio_mean is not None and spatio_std is not None:
+            new_traj = new_traj * spatio_std + spatio_mean
         new_traj[:,0] = np.clip(new_traj[:,0], lon_range[0], lon_range[1])
         new_traj[:,1] = np.clip(new_traj[:,1], lat_range[0], lat_range[1])
+        assert new_traj.dtype == np.float64
         Gen_traj.append(new_traj)
     assert len(Gen_traj) == x.shape[0]
 
@@ -51,13 +53,16 @@ def viz_trajs(x, lengths, spatio_mean, spatio_std, lon_range, lat_range):
     plt.gcf().canvas.draw()  # Draw the canvas to update the plot
     image = np.frombuffer(plt.gcf().canvas.tostring_rgb(), dtype='uint8')
     image = image.reshape(plt.gcf().canvas.get_width_height()[::-1] + (3,))
+    plt.close()  # Close the figure to free memory
     return image
 
 class DDPM:
     def __init__(self,
                  T: int,
                  noise_level_share: bool,
-                 device: str
+                 device: str,
+                 beta_start: float = 1e-4,
+                 beta_end: float = 0.02,
     ) -> None:
         ''' T is the max diffusion step. noise_level_share indicate whether add different
         noise levels among the sequence dimension(2nd dimension) '''
@@ -65,7 +70,7 @@ class DDPM:
         self.noise_level_share = noise_level_share
         self.device = device
 
-        self.betas = torch.linspace(1e-4, .05, T, dtype=torch.float32).to(device)
+        self.betas = torch.linspace(beta_start, beta_end, T, dtype=torch.float32).to(device)
         self.one_minus_betas = 1 - self.betas
         self.alphas = torch.cumprod(self.one_minus_betas, dim=0) # someplaces use alpha_bar
 

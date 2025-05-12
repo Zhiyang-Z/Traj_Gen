@@ -10,19 +10,27 @@ class WideAndDeep(nn.Module):
         self.wide_fc = nn.Linear(5, embedding_dim)
 
         # Deep part (neural network for categorical attributes)
-        self.depature_embedding = nn.Embedding(288, hidden_dim)
-        self.sid_embedding = nn.Embedding(257, hidden_dim)
-        self.eid_embedding = nn.Embedding(257, hidden_dim)
+        self.depature_embedding = nn.Embedding(288+1, hidden_dim)
+        self.sid_embedding = nn.Embedding(256+1, hidden_dim)
+        self.eid_embedding = nn.Embedding(256+1, hidden_dim)
         self.deep_fc1 = nn.Linear(hidden_dim*3, embedding_dim)
         self.deep_fc2 = nn.Linear(embedding_dim, embedding_dim)
 
-    def forward(self, attr):
+    def forward(self, attr, cond_drop_prob):
         # Continuous attributes
         continuous_attrs = attr[:, 1:6]
 
         # Categorical attributes
         depature, sid, eid = attr[:, 0].long(
         ), attr[:, 6].long(), attr[:, 7].long()
+
+        # randomly drop some conditions
+        if cond_drop_prob > 0:
+            drop_ids = torch.rand(attr.shape[0], device=attr.device) < cond_drop_prob
+            continuous_attrs[drop_ids,:] = 0 # 0 for drop
+            depature[drop_ids] = 288 # last index for drop
+            sid[drop_ids] = 256 # last index for drop
+            eid[drop_ids] = 256 # last index for drop
 
         # Wide part
         wide_out = self.wide_fc(continuous_attrs)

@@ -1,4 +1,9 @@
 import numpy as np
+import random
+
+# Set random seed
+random.seed(42)
+np.random.seed(42)
 
 city = 'chengdu'
 # Example array

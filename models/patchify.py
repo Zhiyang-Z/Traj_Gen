@@ -3,7 +3,31 @@ import torch.nn as nn
 from einops import rearrange
 from timm.layers.helpers import to_2tuple
 
-class PatchEmbed(nn.Module):
+class PatchEmbed1D(nn.Module):
+    """1D Traj to Patch Embedding"""
+    def __init__(
+        self,
+        traj_length=200,
+        patch_size=1,
+        in_chans=2,
+        embed_dim=768,
+        norm_layer=None,
+    ):
+        super().__init__()
+        assert traj_length % patch_size == 0, "traj_length must be divisible by patch_size"
+        self.out_length = traj_length // patch_size
+        self.proj = nn.Conv1d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, padding=0)
+        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+
+    def forward(self, x):
+        B, C, L = x.shape
+        x = self.proj(x)
+        assert x.shape[2] == self.out_length, f"Input length ({L}) doesn't match model ({self.out_length})."
+        x = rearrange(x, "B C L -> B L C")
+        x = self.norm(x)
+        return x
+
+class XPatchEmbed(nn.Module):
     """2D Image to Patch Embedding"""
     def __init__(
         self,

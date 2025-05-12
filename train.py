@@ -30,10 +30,10 @@ wandb.init(project="Traj_Gen")
 device = f'cuda:0'
 
 dataset = TrajectoryData(
-    f'/home/zhiyang/projects/DiTraj/datasets/{city}/data_train.npy',
-    f'/home/zhiyang/projects/DiTraj/datasets/{city}/label_train.npy',
-    f'/home/zhiyang/projects/DiTraj/datasets/{city}/traj_mean.npy',
-    f'/home/zhiyang/projects/DiTraj/datasets/{city}/traj_std.npy'
+    f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/data_train.npy',
+    f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_train.npy',
+    f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_mean.npy',
+    f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_std.npy'
 )
 # dataset = Subset(dataset, indices=list(range(256)))
 dataloader = DataLoader(dataset,
