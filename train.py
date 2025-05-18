@@ -37,7 +37,7 @@ dataset = TrajectoryData(
 )
 # dataset = Subset(dataset, indices=list(range(256)))
 dataloader = DataLoader(dataset,
-                        batch_size=256,
+                        batch_size=512,
                         pin_memory=True,
                         shuffle=True,
                         num_workers=8,

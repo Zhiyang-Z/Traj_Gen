@@ -38,10 +38,10 @@ class Trainer:
         # Creates a GradScaler for mixed precision training.
         # self.scaler = torch.GradScaler()
 
-        self.ddpm = DDPM(1000, True, self.device)
+        self.ddpm = DDPM(500, True, self.device, 1e-4, 0.05)
 
         if self.rank == 0:
-            wandb.init(project="Traj_Gen")
+            wandb.init(project="Traj_Gen_Clean_Data")
 
     def train(self):
         step = -1
@@ -88,7 +88,7 @@ class Trainer:
                     self.sample()
 
                 if step % 1000 == 0 and self.rank == 0:
-                    torch.save(self.model.state_dict(), f"/home/zzhang18/proj/Traj_Gen/saved_models/{step}.pt")
+                    torch.save(self.model.state_dict(), f"/home/zzhang18/proj/Traj_Gen/saved_models/shift{step}.pt")
 
     @torch.no_grad
     def sample(self):
@@ -96,9 +96,9 @@ class Trainer:
 
         # prepare test data
         city = 'chengdu'
-        N = 1000
+        N = 3000
         sample_num_per_rank = int(N/self.world_size)
-        assert sample_num_per_rank % self.world_size == 0
+        assert N % self.world_size == 0
         # load test data
         label_test = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_test.npy')[0:N]
         lengths = label_test[:,3].astype(np.int32)
@@ -111,7 +111,7 @@ class Trainer:
         noise = torch.randn(sample_num_per_rank, 2, 200).to(self.device)
         cond = torch.tensor(label_test).to(self.device)
         assert cond.shape[0] == sample_num_per_rank
-        ddim_step = np.array(range(0, 1000, 4))
+        ddim_step = np.array(range(0, 500, 5))
         for noise_idx in reversed(range(len(ddim_step))):
             t = torch.full((sample_num_per_rank,), ddim_step[noise_idx], dtype=torch.long).to(self.device)
             t_next = torch.full((sample_num_per_rank,), ddim_step[noise_idx - 1] if noise_idx > 0 else -1, dtype=torch.long).to(self.device)
@@ -133,6 +133,7 @@ class Trainer:
             sample_np = sample_np.astype(np.float64)
             sample_np = sample_np * spatio_std + spatio_mean
             sample_np[:,:,0] = sample_np[:,:,0]/1000 + 104
-            sample_np[:,:,1] = sample_np[:,:,1]/100 + 30
+            sample_np[:,:,1] = sample_np[:,:,1]/1000 + 30
+
             image = viz_trajs(sample_np, lengths, [104.03968953679004, 104.12705400673643], [30.655400079856072, 30.730172829483855])
             wandb.log({f"{N}sample": wandb.Image(image)})

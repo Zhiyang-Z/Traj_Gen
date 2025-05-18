@@ -17,17 +17,18 @@ class TrajectoryData(Dataset):
 
         self.traj_means = np.load(traj_mean_path)
         self.traj_stds = np.load(traj_std_path)
-        assert 3866643 == self.label.shape[0]
+        assert 3011500 == self.label.shape[0]
 
     def __len__(self):
         return self.label.shape[0]
 
     def __getitem__(self, idx):
-        fp_data = open_memmap(self.data_path, dtype='float64', mode='r', shape=(3866643, 200, 2))
+        fp_data = open_memmap(self.data_path, dtype='float64', mode='r', shape=(3011500, 200, 2))
         data = np.array(fp_data[idx].copy())
         del fp_data
         data[:,0] = (data[:,0] - 104)*1000
-        data[:,1] = (data[:,1] - 30)*100
+        data[:,1] = (data[:,1] - 30)*1000
+
         data = (data - self.traj_means) / self.traj_stds
         assert data.dtype == np.float64
         # wrap data by adding 2 special states: <SOT> and <EOT>

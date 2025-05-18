@@ -11,7 +11,7 @@ def ddp_setup(rank, world_size):
         world_size: Total number of processes
     """
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+    os.environ["MASTER_PORT"] = "12356"
     os.environ['LOCAL_WORLD_SIZE'] = str(world_size)
     os.environ['WORLD_SIZE'] = str(world_size)
     os.environ['RANK'] = str(rank)

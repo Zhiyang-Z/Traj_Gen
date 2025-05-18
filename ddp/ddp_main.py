@@ -34,9 +34,9 @@ def ddp_main(rank: int, world_size: int, data_path: str, batch_size: int):
     model = DiTraj1D(traj_length=200,
                      patch_size=1,
                      in_channels=2,
-                     hidden_size=768,
+                     hidden_size=384,
                      depth=12,
-                     num_heads=12,
+                     num_heads=6,
                      mlp_ratio=4.0)
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Number of parameters: {total_params}")
