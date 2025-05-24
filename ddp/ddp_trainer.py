@@ -10,7 +10,8 @@ import wandb
 import numpy as np
 from utils.utils import DDPM
 from tqdm import tqdm
-from utils.utils import viz_trajs
+from utils.utils import viz_trajs, resample_trajectory
+from utils.metric_calculator import MetricCalculator
 
 class Trainer:
     def __init__(
@@ -18,7 +19,20 @@ class Trainer:
         train_data_loader: DataLoader,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
+        mark: str,
+        data_path: str,
+        city: str,
     ) -> None:
+        self.mark, self.data_path, self.city = mark, data_path, city
+        if city == 'chengdu':
+            # chengdu: [104.03968953679004, 30.655400079856072, 104.12705400673643, 30.730172829483855]
+            self.min_lat, self.max_lat, self.min_lon, self.max_lon = 30.655400079856072, 30.73018, 104.03968953679004, 104.12706
+        elif city == 'xian':
+            # xian: [108.90659955383317, 34.20694207396501, 108.99373658803785, 34.28184317582219]
+            self.min_lat, self.max_lat, self.min_lon, self.max_lon = 34.20694207396501, 34.28185, 108.90659955383317, 108.99374
+        else:
+            raise ValueError('city not in [chengdu, xian]')
+        
         self.world_size = int(os.environ['WORLD_SIZE'])
         self.rank = int(os.environ['RANK'])
         self.device = f'cuda:{self.rank}'
@@ -38,10 +52,10 @@ class Trainer:
         # Creates a GradScaler for mixed precision training.
         # self.scaler = torch.GradScaler()
 
-        self.ddpm = DDPM(500, True, self.device, 1e-4, 0.05)
+        self.ddpm = DDPM(1000, True, self.device)
 
         if self.rank == 0:
-            wandb.init(project="Traj_Gen_Clean_Data")
+            wandb.init(project="Traj_Gen_Paper")
 
     def train(self):
         step = -1
@@ -72,53 +86,51 @@ class Trainer:
                 # self.scaler.step(self.optimizer)
                 # self.scaler.update()
                 step += 1
-                # if self.rank == 0:
-                #     for param_id, param_state in self.optimizer.state_dict()['state'].items():
-                #         print(f"Parameter ID: {param_id}")
-                #         for key, value in param_state.items():
-                #             print(f"  {key}: {value}")
                 # collect training info
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.AVG)
                 dist.all_reduce(avg_grad_norm, op=dist.ReduceOp.AVG)
                 if self.rank == 0:
+                    wandb.log({"epoch": epoch}, commit = False)
                     wandb.log({"grad_norm": avg_grad_norm.item()}, commit = False)
                     wandb.log({"loss": avg_loss[0].item()}, commit=True)
 
-                if step % 1000 == 0:
+                if step % 10000 == 0:
                     self.sample()
 
-                if step % 1000 == 0 and self.rank == 0:
-                    torch.save(self.model.state_dict(), f"/home/zzhang18/proj/Traj_Gen/saved_models/shift{step}.pt")
+                if step % 10000 == 0 and self.rank == 0:
+                    torch.save(self.model.state_dict(), f"/home/zzhang18/proj/Traj_Gen/saved_models/{self.mark}_{step}.pt")
 
     @torch.no_grad
     def sample(self):
         self.model.eval()
 
         # prepare test data
-        city = 'chengdu'
-        N = 3000
+        N = 5000
         sample_num_per_rank = int(N/self.world_size)
         assert N % self.world_size == 0
         # load test data
-        label_test = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_test.npy')[0:N]
+        label_test = np.load(self.data_path + f'/{self.city}/{self.city}_test_label.npy')[0:N]
         lengths = label_test[:,3].astype(np.int32)
         label_test = label_test[sample_num_per_rank * self.rank: sample_num_per_rank * (self.rank + 1)]
-        label_mean = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_mean.npy')
-        label_std = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_std.npy')
+        label_mean = np.load(self.data_path + f'/{self.city}/{self.city}_label_mean.npy')
+        label_std = np.load(self.data_path + f'/{self.city}/{self.city}_label_std.npy')
         label_test[:, 0] = np.floor((label_test[:, 0] % 86400) / 300)
         label_test[:,1:6] = (label_test[:,1:6] - label_mean) / label_std
 
         noise = torch.randn(sample_num_per_rank, 2, 200).to(self.device)
         cond = torch.tensor(label_test).to(self.device)
         assert cond.shape[0] == sample_num_per_rank
-        ddim_step = np.array(range(0, 500, 5))
+        ddim_step = np.array(range(0, 1000, 5))
         for noise_idx in reversed(range(len(ddim_step))):
             t = torch.full((sample_num_per_rank,), ddim_step[noise_idx], dtype=torch.long).to(self.device)
             t_next = torch.full((sample_num_per_rank,), ddim_step[noise_idx - 1] if noise_idx > 0 else -1, dtype=torch.long).to(self.device)
             # with torch.autocast(device_type=self.device, dtype=torch.float16):
-            uncond_noise_pred = self.model(noise, t, cond, 1)
             cond_noise_pred = self.model(noise, t, cond, 0)
-            noise_pred = uncond_noise_pred + (cond_noise_pred - uncond_noise_pred) * 4
+            # if ddim_step[noise_idx] >= 500:
+            #     uncond_noise_pred = self.model(noise, t, cond, 1)
+            #     noise_pred = uncond_noise_pred + (cond_noise_pred - uncond_noise_pred) * 4
+            # else:
+            noise_pred = cond_noise_pred
             # noise = ddpm.denoise(noise, noise_pred, t)
             noise = self.ddpm.denoise_ddim(noise, noise_pred, t, t_next, 0)
 
@@ -129,11 +141,26 @@ class Trainer:
         if self.rank == 0:
             # convert to numpy
             sample_np = torch.cat(sample_array, dim=0).permute(0,2,1).contiguous().cpu().numpy()
-            spatio_mean, spatio_std = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_shift_mean.npy'), np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_shift_std.npy')
+            spatio_mean, spatio_std = np.load(self.data_path + f'/{self.city}/{self.city}_traj_mean.npy'), np.load(self.data_path + f'/{self.city}/{self.city}_traj_std.npy')
             sample_np = sample_np.astype(np.float64)
             sample_np = sample_np * spatio_std + spatio_mean
-            sample_np[:,:,0] = sample_np[:,:,0]/1000 + 104
-            sample_np[:,:,1] = sample_np[:,:,1]/1000 + 30
 
-            image = viz_trajs(sample_np, lengths, [104.03968953679004, 104.12705400673643], [30.655400079856072, 30.730172829483855])
+            image = viz_trajs(sample_np, lengths, [self.min_lon, self.max_lon], [self.min_lat, self.max_lat])
             wandb.log({f"{N}sample": wandb.Image(image)})
+
+            # calculate metrics
+            Gen_traj = []
+            for j in range(sample_np.shape[0]):
+                new_traj = resample_trajectory(sample_np[j], lengths[j])
+                new_traj[:,0] = np.clip(new_traj[:,0], self.min_lon, self.max_lon)
+                new_traj[:,1] = np.clip(new_traj[:,1], self.min_lat, self.max_lat)
+                assert new_traj.dtype == np.float64
+                Gen_traj.append(new_traj)
+            assert len(Gen_traj) == sample_np.shape[0]
+            metric_calculator = MetricCalculator(Gen_traj, [self.min_lon, self.max_lon], [self.min_lat, self.max_lat], 0.00045)
+            density_error = metric_calculator.calculate_density_error(self.data_path + f'/{self.city}/{self.city}_density_0.00045.npy')
+            trip_error = metric_calculator.calculate_trip_error(self.data_path + f'/{self.city}/{self.city}_start_density_0.00045.npy', self.data_path + f'/{self.city}/{self.city}_end_density_0.00045.npy')
+            length_error = metric_calculator.calculate_length_error(self.data_path + f'/{self.city}/{self.city}_dist_hist_0.3.npy', [0, 30], 0.3)
+            wandb.log({"density_error": density_error}, commit = False)
+            wandb.log({"trip_error": trip_error}, commit = False)
+            wandb.log({"length_error": length_error}, commit = True)

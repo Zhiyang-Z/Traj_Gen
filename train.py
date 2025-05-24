@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Subset
 from datasets.traj_dataloader import TrajectoryData
 from tqdm import tqdm
-from models.DiTraj import DiTraj
+from models.DiTraj2D import DiTraj
 from utils.utils import DDPM
 from einops import rearrange
 import random

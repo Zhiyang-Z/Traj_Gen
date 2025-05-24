@@ -29,7 +29,7 @@ model = DiTraj1D(traj_length=200,
 total_params = sum(p.numel() for p in model.parameters())
 print(f"Number of parameters: {total_params}")
 
-dist_params = torch.load('/home/zzhang18/proj/Traj_Gen/saved_models/110000.pt')
+dist_params = torch.load('/home/zzhang18/proj/Traj_Gen/saved_models/AAAnoshift109000.pt')
 single_params = {k.replace('module.', ''): v for k, v in dist_params.items()}
 single_params = {k.replace('_orig_mod.', ''): v for k, v in single_params.items()}
 model.load_state_dict(single_params)
@@ -39,12 +39,12 @@ model.eval()
 
 # prepare test data
 city = 'chengdu'
-N = 1000
+N = 3000
 # load test data
-label_test = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_test.npy')[0:N]
+label_test = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/chengdu_test_label.npy')[0:N]
 lengths = label_test[:,3].astype(np.int32)
-label_mean = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_mean.npy')
-label_std = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/label_std.npy')
+label_mean = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/chengdu_label_mean.npy')
+label_std = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/chengdu_label_std.npy')
 label_test[:, 0] = np.floor((label_test[:, 0] % 86400) / 300)
 label_test[:,1:6] = (label_test[:,1:6] - label_mean) / label_std
 
@@ -57,19 +57,38 @@ for noise_idx in reversed(range(len(ddim_step))):
     t_next = torch.full((N,), ddim_step[noise_idx - 1] if noise_idx > 0 else -1, dtype=torch.long).to(device)
     # with torch.autocast(device_type=self.device, dtype=torch.float16):
     with torch.no_grad():
-        uncond_noise_pred = model(noise, t, cond, 1)
         cond_noise_pred = model(noise, t, cond, 0)
         # if any(uncond_noise_pred >= 20) or any(cond_noise_pred >= 20):
         # print(uncond_noise_pred.abs().max(), cond_noise_pred.abs().max())
-    noise_pred = uncond_noise_pred + (cond_noise_pred - uncond_noise_pred) * 4
-    noise_pred = torch.clamp(noise_pred, -6, 6)
-    print(noise_pred.abs().max())
+        print(ddim_step[noise_idx])
+        if ddim_step[noise_idx] < -1:
+            noise_pred = cond_noise_pred
+        else:
+            uncond_noise_pred = model(noise, t, cond, 1)
+            noise_pred = uncond_noise_pred + (cond_noise_pred - uncond_noise_pred) * 5
+    # noise_pred = cond_noise_pred
+    # noise_pred = torch.clamp(noise_pred, -6, 6)
+    print(uncond_noise_pred.abs().max(), uncond_noise_pred.abs().mean())
+    print(cond_noise_pred.abs().max(), cond_noise_pred.abs().mean())
+    print((cond_noise_pred - uncond_noise_pred).abs().max(), (cond_noise_pred - uncond_noise_pred).abs().mean())
+    print(noise_pred.abs().max(), noise_pred.abs().mean())
+    # if noise_pred.abs().max() > 6: break
     # noise = ddpm.denoise(noise, noise_pred, t)
     noise = ddpm.denoise_ddim(noise, noise_pred, t, t_next, 0)
+    # # convert to numpy
+    # sample_np = noise.permute(0,2,1).cpu().numpy()
+    # spatio_mean, spatio_std = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_mean.npy'), np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_std.npy')
+    # sample_np = sample_np.astype(np.float64)
+    # sample_np = sample_np * spatio_std + spatio_mean
+    # image = viz_trajs(sample_np, lengths, [104.03968953679004, 104.12705400673643], [30.655400079856072, 30.730172829483855])
+    # # Display the image
+    # plt.imshow(image)
+    # plt.axis('off')  # Hide axis
+    # plt.savefig(f'./process/reverse/sample_image{noise_idx}.png', bbox_inches='tight', pad_inches=0)
 
 # convert to numpy
 sample_np = noise.permute(0,2,1).cpu().numpy()
-spatio_mean, spatio_std = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_mean.npy'), np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/traj_std.npy')
+spatio_mean, spatio_std = np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/chengdu_traj_mean.npy'), np.load(f'/home/zzhang18/proj/Traj_Gen/datasets/{city}/chengdu_traj_std.npy')
 sample_np = sample_np.astype(np.float64)
 sample_np = sample_np * spatio_std + spatio_mean
 image = viz_trajs(sample_np, lengths, [104.03968953679004, 104.12705400673643], [30.655400079856072, 30.730172829483855])

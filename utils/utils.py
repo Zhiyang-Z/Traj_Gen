@@ -2,6 +2,32 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
+def viz_trajs_no_resample(x, lon_range, lat_range):
+    """Give a trajs array and length array, visulaize the trajs
+       x: (B, N, 2)
+       lenght: (B,)
+       spatio_mean: (2,)
+       spatio_std: (2,)
+       chengdu: [104.03968953679004, 104.12705400673643], [30.655400079856072, 30.730172829483855]
+    """
+    plt.figure(figsize=(8,8))
+    for i in range(len(x)):
+        traj=x[i]
+        traj[:,0] = np.clip(traj[:,0], lon_range[0], lon_range[1])
+        traj[:,1] = np.clip(traj[:,1], lat_range[0], lat_range[1])
+        plt.plot(traj[:,0],traj[:,1],color='blue',alpha=0.1)
+    plt.axis('off')
+    # plt.tight_layout()
+    # save
+    # plt.savefig('Chengdu_traj_3000_test.png')
+    # plt.show()
+    # Use `canvas` to retrieve the RGB image as a NumPy array
+    plt.gcf().canvas.draw()  # Draw the canvas to update the plot
+    image = np.frombuffer(plt.gcf().canvas.tostring_rgb(), dtype='uint8')
+    image = image.reshape(plt.gcf().canvas.get_width_height()[::-1] + (3,))
+    plt.close()  # Close the figure to free memory
+    return image
+
 def resample_trajectory(x, length=200):
     """
     Resamples a trajectory to a new length.
@@ -47,7 +73,7 @@ def viz_trajs(x, lengths, lon_range, lat_range, spatio_mean = None, spatio_std =
     plt.axis('off')
     # plt.tight_layout()
     # save
-    # plt.savefig('Chengdu_traj_3000_test.png')
+    plt.savefig('Chengdu_traj_3000_test.png')
     # plt.show()
     # Use `canvas` to retrieve the RGB image as a NumPy array
     plt.gcf().canvas.draw()  # Draw the canvas to update the plot
@@ -94,6 +120,23 @@ class DDPM:
         
         x_noise = alphas_sqrt * x + one_minus_alphas_sqrt * noise
         return x_noise, noise, noise_levels
+    
+    def forward_with_noise_level(self, x: torch.tensor, noise_levels: torch.tensor):
+        x = x.to(self.device)
+        B, L = x.shape[0], x.shape[1]
+
+        # diffuse
+        noise = torch.randn_like(x)
+        assert noise_levels.shape == (B,) # or noise_level.shape == (B, L)
+        alphas_sqrt = self.alphas[noise_levels].sqrt()
+        one_minus_alphas_sqrt = (1 - self.alphas[noise_levels]).sqrt()
+        while alphas_sqrt.ndim < x.ndim:
+            alphas_sqrt = alphas_sqrt.unsqueeze(-1)
+            one_minus_alphas_sqrt = one_minus_alphas_sqrt.unsqueeze(-1)
+            assert alphas_sqrt.ndim == one_minus_alphas_sqrt.ndim
+        
+        x_noise = alphas_sqrt * x + one_minus_alphas_sqrt * noise
+        return x_noise, noise
     
     def denoise(self, xt: torch.tensor, noise_pred: torch.tensor, t: torch.tensor):
         '''t is the xt's noise levels in [0, T). t can be two dimension tensor.'''
